@@ -1,0 +1,138 @@
+import os
+import sys
+import yaml
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+
+def decimal_to_little_endian_hex(decimal_number, byte_length=4):
+    little_endian_bytes = decimal_number.to_bytes(byte_length, byteorder='little', signed=True)
+    hex_string = little_endian_bytes.hex()
+    return hex_string
+
+def search_hex_in_file(file_path, byte_pattern):
+    try:
+        with open(file_path, 'rb') as f:
+            content = f.read()
+            if byte_pattern in content:
+                return file_path
+    except Exception as e:
+        pass
+    return None
+
+def search_dat_files(directory, hex_string, max_workers=8):
+    byte_pattern = bytes.fromhex(hex_string)
+    matches = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = []
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                if file.lower().endswith('.dat'):
+                    file_path = os.path.join(root, file)
+                    futures.append(executor.submit(search_hex_in_file, file_path, byte_pattern))
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                matches.append(result)
+    return matches
+
+def classify_files(matches, target_hex):
+    if len(matches) == 2:
+        file1, file2 = matches
+        with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
+            content1, content2 = f1.read(), f2.read()
+            
+            file1_contains = target_hex in content1
+            file2_contains = target_hex in content2
+            
+            if file1_contains and not file2_contains:
+                return {file1: "皮肤", file2: "伪实体"}
+            elif file2_contains and not file1_contains:
+                return {file2: "皮肤", file1: "伪实体"}
+            else:
+                return {file1: "未分类", file2: "未分类"}
+    return {match: "未分类" for match in matches}
+
+def extract_markers(file_path, hex_pattern, category):
+    byte_pattern = bytes.fromhex(hex_pattern)
+    try:
+        with open(file_path, 'rb') as f:
+            content = f.read()
+            pos = content.find(byte_pattern)
+            if pos != -1:
+                if category == "皮肤":
+                    marker1 = content[max(0, pos - 33):max(0, pos - 31)].hex()
+                    marker2 = content[max(0, pos - 17):max(0, pos - 15)].hex()
+                elif category == "伪实体":
+                    marker1 = content[max(0, pos - 41):max(0, pos - 39)].hex()
+                    marker2 = content[max(0, pos - 25):max(0, pos - 23)].hex()
+                return marker1, marker2
+    except Exception as e:
+        pass
+    return None, None
+
+def update_yaml(file_path, marker1, marker2):
+    if os.path.exists(file_path):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        if len(lines) >= 3:
+            lines[:3] = [f"hex_markers:\n", f"   start: \"{marker1}\"\n", f"   end: \"{marker2}\"\n"]
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+
+def update_beautification_yaml(file_path, skin_file):
+    if os.path.exists(file_path):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        if len(lines) >= 1:
+            lines[0] = f"file_path: 打包/dat/{os.path.basename(skin_file)}\n"
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+
+def main():
+    decimal_numbers = [333600100]
+    hex_list = [decimal_to_little_endian_hex(num) for num in decimal_numbers]
+    directory_to_search = '解包数据/dat'
+    
+    if not os.path.isdir(directory_to_search):
+        sys.exit(1)
+    
+    all_matches = set()
+    skin_file = None
+    entity_file = None
+    skin_markers = None
+    entity_markers = None
+    
+    for hex_str in hex_list:
+        matches = search_dat_files(directory_to_search, hex_str)
+        
+        classified_files = classify_files(matches, bytes.fromhex("576561706F6E5075626C6963"))
+        for file, category in classified_files.items():
+            hex_pattern = decimal_to_little_endian_hex(413753, byte_length=4)
+            marker1, marker2 = extract_markers(file, hex_pattern, category)
+            if marker1 and marker2:
+                if category == "皮肤":
+                    skin_file = file
+                    skin_markers = (marker1, marker2)
+                    update_yaml("cloth.yaml", marker1, marker2)
+                elif category == "伪实体":
+                    entity_file = file
+                    entity_markers = (marker1, marker2)
+                    update_yaml("伪实体配置.yaml", marker1, marker2)
+        
+        if skin_file:
+            update_beautification_yaml("美化配置.yaml", skin_file)
+    
+    print("查找结果如下：\n")
+    print(f"美化dat：")
+    print(f"衣服美化dat小包：{os.path.basename(skin_file) if skin_file else '未找到'}")
+    print(f"伪实体美化dat小包：{os.path.basename(entity_file) if entity_file else '未找到'}")
+    print("\n特征值：")
+    print(f"衣服美化：{skin_markers[0] if skin_markers else '未找到'}, {skin_markers[1] if skin_markers else '未找到'}")
+    print(f"伪实体美化：{entity_markers[0] if entity_markers else '未找到'}, {entity_markers[1] if entity_markers else '未找到'}")
+    print(f"\n所有的特征值已经在yaml中自动更新了，也就是不用手动把上面的值再写进去了")
+if __name__ == "__main__":
+    main()

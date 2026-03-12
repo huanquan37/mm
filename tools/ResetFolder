@@ -1,0 +1,31 @@
+import os
+import shutil
+
+def delete_and_create_folders():
+    # 获取父目录路径
+    parent_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # 文件夹路径
+    pack_dir = os.path.join(parent_dir, '打包')
+    unpack_dir = os.path.join(parent_dir, '解包数据')
+
+    # 删除文件夹及其内容（如果存在）
+    if os.path.exists(pack_dir):
+        shutil.rmtree(pack_dir)
+    if os.path.exists(unpack_dir):
+        shutil.rmtree(unpack_dir)
+
+    # 创建新的文件夹
+    os.makedirs(pack_dir, exist_ok=True)
+    os.makedirs(unpack_dir, exist_ok=True)
+
+    # 创建子文件夹
+    os.makedirs(os.path.join(pack_dir, 'dat'), exist_ok=True)
+    os.makedirs(os.path.join(pack_dir, 'uexp'), exist_ok=True)
+    os.makedirs(os.path.join(unpack_dir, 'dat'), exist_ok=True)
+    os.makedirs(os.path.join(unpack_dir, 'uexp'), exist_ok=True)
+
+    print("文件夹已成功创建！")
+
+if __name__ == "__main__":
+    delete_and_create_folders()
